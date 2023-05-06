@@ -6,13 +6,14 @@ import numpy.typing as npt
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
+from typing import Tuple
 
 
 class Line:
-    def __init__(self, m: float, c: float, inlier_indices: list = []):
+    def __init__(self, m: float, c: float, inlier_points: list = []):
         self.m = m
         self.c = c
-        self.inlier_indices = inlier_indices
+        self.inlier_points = inlier_points
 
     def __str__(self):
         return f"m:{self.m} c:{self.c}"
@@ -24,7 +25,7 @@ class Line:
         return self.m, self.c
 
     def get_inlier_count(self):
-        return len(self.inlier_indices)
+        return len(self.inlier_points)
 
 
 def sequential_ransac_multi_line_detection(
@@ -33,7 +34,7 @@ def sequential_ransac_multi_line_detection(
     min_points: int,
     max_iterations: int,
     max_lines: int,
-) -> npt.NDArray[np.float64]:
+) -> npt.NDArray[Line]:
 
     best_lines = []
     remaining_data = data
@@ -57,18 +58,13 @@ def sequential_ransac_multi_line_detection(
         total_inliers_count += best_line.get_inlier_count()
 
         # remove the inliers
-        inlier_indices = []
+        inlier_points = []
         # slope, intercept = best_line.get_line_explicit()
         for j, (x, y) in enumerate(remaining_data):
             if calc_dist_to_line((x, y), best_line) < threshold:
-                inlier_indices.append(j)
+                inlier_points.append(j)
 
-        remaining_data = [
-            remaining_data[j]
-            for j in range(len(remaining_data))
-            if j not in inlier_indices
-        ]
-        remaining_data = np.array(remaining_data)
+        remaining_data = np.delete(remaining_data, inlier_points, axis=0)
 
         # second stopping condition
         if len(remaining_data) <= 5:
@@ -136,7 +132,7 @@ def fit_line(points: list):
     return m, c
 
 
-def calc_dist_to_line(point: tuple, line: Line) -> float:
+def calc_dist_to_line(point: Tuple[float, float], line: Line):
     # Unpack the point coordinates
     x, y = point
 
@@ -146,7 +142,7 @@ def calc_dist_to_line(point: tuple, line: Line) -> float:
     return distance
 
 
-def calc_dist_to_point(point1: tuple, point2: tuple):
+def calc_dist_to_point(point1: Tuple[float, float], point2: Tuple[float, float]):
 
     x1, y1 = point1
     x2, y2 = point2
@@ -173,7 +169,7 @@ def polar_to_cartesian(
     return np.array(cartesian_points)
 
 
-def load_points_file(filename: str):
+def load_points_file(filename):
 
     points = []
     with open(filename, "r") as f:
@@ -201,10 +197,9 @@ def find_intersection(line1: Line, line2: Line):
     return x, y
 
 
-def find_connected_line_pair(detected_lines: npt.NDArray[np.float64]):
+def find_connected_line_pair(detected_lines: npt.NDArray[Line]) -> Tuple[Line, Line]:
 
     # draw circle
-    best_intersection = None
     best_inside_circle_cnt = 0
     for i in range(len(detected_lines)):
         for j in range(i + 1, len(detected_lines)):
@@ -216,17 +211,14 @@ def find_connected_line_pair(detected_lines: npt.NDArray[np.float64]):
             center = find_intersection(line1, line2)
 
             inside_circle_cnt = 0
-            # the inlier_idx is not actually an index
-            for inlier_idx in line1.inlier_indices:
-                if calc_dist_to_point(inlier_idx, center) < radius:
+
+            for inlier_point in line1.inlier_points:
+                if calc_dist_to_point(inlier_point, center) < radius:
                     inside_circle_cnt += 1
 
-            for inlier_idx in line2.inlier_indices:
-                if calc_dist_to_point(inlier_idx, center) < radius:
+            for inlier_point in line2.inlier_points:
+                if calc_dist_to_point(inlier_point, center) < radius:
                     inside_circle_cnt += 1
-
-            print("inside circle count", inside_circle_cnt)
-            print("acute angle", calc_acute_angle(line1, line2))
 
             if (
                 inside_circle_cnt > best_inside_circle_cnt
@@ -239,7 +231,7 @@ def find_connected_line_pair(detected_lines: npt.NDArray[np.float64]):
 
 
 def visualize_lines(
-    cartesian_points: npt.NDArray[np.float64], best_intersection: tuple
+    cartesian_points: npt.NDArray[np.float64], best_intersection: Tuple[Line, ...]
 ):
 
     x_coords = [p[0] for p in cartesian_points]
@@ -342,7 +334,8 @@ def main():
     best_line_pair = find_connected_line_pair(detected_lines)
 
     # visualization
-    visualize_lines(cartesian_points, best_line_pair)
+    visualize_lines(cartesian_points, detected_lines)
+    # visualize_lines(cartesian_points, best_line_pair)
     visualize_points_polar(points_filtered, args.lidar, SCAN_RANGE)
     plt.show(block=True)
 
