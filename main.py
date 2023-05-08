@@ -7,6 +7,7 @@ import numpy.typing as npt
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from typing import Tuple
+from scipy import stats
 
 
 class Line:
@@ -34,6 +35,8 @@ def sequential_ransac_multi_line_detection(
     min_points: int,
     max_iterations: int,
     max_lines: int,
+    min_inliers: int = 5,
+    min_points_cnt: int = 5,
 ) -> npt.NDArray[Line]:
 
     best_lines = []
@@ -50,16 +53,23 @@ def sequential_ransac_multi_line_detection(
         )
 
         # first stopping condition
-        if best_line.get_inlier_count() <= 5:
+        if best_line.get_inlier_count() <= min_inliers:
             break
 
-        # accumulate the detected line
-        best_lines.append(best_line)
+        # fit the new line
+        X = np.array(best_line.inlier_points)[:, 0]
+        Y = np.array(best_line.inlier_points)[:, 1]
+        slope, intercept, _, _, _ = stats.linregress(X, Y)
+
+        best_line_fit = Line(slope, intercept)
+        best_line_fit.inlier_points = best_line.inlier_points
+
+        # accumulate the fitted line
+        best_lines.append(best_line_fit)
         total_inliers_count += best_line.get_inlier_count()
 
         # remove the inliers
         inlier_points = []
-        # slope, intercept = best_line.get_line_explicit()
         for j, (x, y) in enumerate(remaining_data):
             if calc_dist_to_line((x, y), best_line) < threshold:
                 inlier_points.append(j)
@@ -67,7 +77,7 @@ def sequential_ransac_multi_line_detection(
         remaining_data = np.delete(remaining_data, inlier_points, axis=0)
 
         # second stopping condition
-        if len(remaining_data) <= 5:
+        if len(remaining_data) <= min_points_cnt:
             break
 
     return np.array(best_lines)
@@ -320,10 +330,8 @@ def main():
 
     cartesian_points = polar_to_cartesian(points_filtered)
 
-    # number_int = 23
     detected_lines = sequential_ransac_multi_line_detection(
         cartesian_points,
-        # number_int,
         threshold=args.threshold,
         min_points=2,
         max_iterations=args.iter,
@@ -334,8 +342,8 @@ def main():
     best_line_pair = find_connected_line_pair(detected_lines)
 
     # visualization
-    visualize_lines(cartesian_points, detected_lines)
-    # visualize_lines(cartesian_points, best_line_pair)
+    # visualize_lines(cartesian_points, detected_lines)
+    visualize_lines(cartesian_points, best_line_pair)
     visualize_points_polar(points_filtered, args.lidar, SCAN_RANGE)
     plt.show(block=True)
 
