@@ -7,8 +7,6 @@ import numpy.typing as npt
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from typing import Tuple
-from scipy import stats
-from copy import deepcopy
 
 
 class Line:
@@ -25,6 +23,12 @@ class Line:
 
     def get_line_explicit(self):
         return self.m, self.c
+
+    def get_line_implicit(self):
+        A = self.m
+        B = -1
+        C = self.c
+        return A, B, C
 
     def get_inlier_count(self):
         return len(self.inlier_points)
@@ -340,6 +344,9 @@ def main():
 
     # find the line pair denoting the two edges of the box
     best_line_pair = find_connected_line_pair(detected_lines)
+
+    for line in best_line_pair:
+        print(line.get_line_implicit())
 
     # visualization
     # visualize_lines(cartesian_points, detected_lines)
