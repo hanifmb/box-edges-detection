@@ -1,4 +1,4 @@
-# Box line edges detection
+# Box edges detection
 
 ## Usage
 Example of finding line pair for 4h.txt point cloud with the horizontal lidar configuration:
