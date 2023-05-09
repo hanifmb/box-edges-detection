@@ -4,9 +4,11 @@ import random
 import numpy as np
 import numpy.typing as npt
 
+from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from typing import Tuple
+from pylr2 import regress2
 
 
 class Line:
@@ -65,9 +67,25 @@ def sequential_ransac_multi_line_detection(
         if best_line.get_inlier_count() <= min_inliers:
             break
 
+
         # accumulate the fitted line
         best_lines.append(best_line)
         total_inliers_count += best_line.get_inlier_count()
+
+        # perform PCA to inliers
+        pca = PCA(n_components=1)
+        pca.fit(best_line.inlier_points)
+
+        v = pca.components_[0]
+        point_on_line = np.mean(best_line.inlier_points, axis=0)
+
+        X = np.array(best_line.inlier_points)[:, 0]
+        Y = np.array(best_line.inlier_points)[:, 1]
+
+        Y_hat = point_on_line[1] + v[1]/v[0] * (X - point_on_line[0])
+
+        plt.scatter(X, Y)
+        plt.plot(X, Y_hat, color='r')
 
         # remove the inliers
         inlier_points = []
