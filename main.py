@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from typing import Tuple
 from scipy import stats
+from copy import deepcopy
 
 
 class Line:
@@ -27,6 +28,10 @@ class Line:
 
     def get_inlier_count(self):
         return len(self.inlier_points)
+
+    def set_line(self, m: float, c):
+        self.m = m
+        self.c = c
 
 
 def sequential_ransac_multi_line_detection(
@@ -56,16 +61,8 @@ def sequential_ransac_multi_line_detection(
         if best_line.get_inlier_count() <= min_inliers:
             break
 
-        # fit the new line
-        X = np.array(best_line.inlier_points)[:, 0]
-        Y = np.array(best_line.inlier_points)[:, 1]
-        slope, intercept, _, _, _ = stats.linregress(X, Y)
-
-        best_line_fit = Line(slope, intercept)
-        best_line_fit.inlier_points = best_line.inlier_points
-
         # accumulate the fitted line
-        best_lines.append(best_line_fit)
+        best_lines.append(best_line)
         total_inliers_count += best_line.get_inlier_count()
 
         # remove the inliers
@@ -209,7 +206,6 @@ def find_intersection(line1: Line, line2: Line):
 
 def find_connected_line_pair(detected_lines: npt.NDArray[Line]) -> Tuple[Line, Line]:
 
-    # draw circle
     best_inside_circle_cnt = 0
     for i in range(len(detected_lines)):
         for j in range(i + 1, len(detected_lines)):
@@ -285,6 +281,10 @@ def visualize_points_polar(
 
     ax.set_ylim(0, SCAN_RANGE["DIST_H"])
     ax.scatter(np.radians(thetas), rhos)
+
+
+def roundup(x):
+    return int(x) if x % 100 == 0 else int(x + 100 - x % 100)
 
 
 def main():
