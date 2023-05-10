@@ -3,40 +3,39 @@ import math
 import random
 import numpy as np
 import numpy.typing as npt
+import matplotlib.pyplot as plt
 
 from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+
 from matplotlib.patches import Circle
 from typing import Tuple
 from pylr2 import regress2
 
 
 class Line:
-    def __init__(self, m: float, c: float, inlier_points: list = []):
-        self.m = m
+    def __init__(self, a: float, b: float, c: float, inlier_points: list = []):
+
+        self.a = a
+        self.b = b
         self.c = c
         self.inlier_points = inlier_points
 
     def __str__(self):
-        return f"m:{self.m} c:{self.c}"
+        return f"a:{self.a} b:{self.b} c:{self.b}"
 
     def __repr__(self):
-        return f"m:{self.m} c:{self.c}"
+        return f"a:{self.a} b:{self.b} c:{self.b}"
 
     def get_line_explicit(self):
         return self.m, self.c
 
-    def get_line_implicit(self):
-        A = self.m
-        B = -1
-        C = self.c
-        return A, B, C
-
     def get_inlier_count(self):
         return len(self.inlier_points)
 
-    def set_line(self, m: float, c):
-        self.m = m
+    def set_line(self, a, b, c):
+        self.a = a
+        self.b = b
         self.c = c
 
 
@@ -48,12 +47,12 @@ def sequential_ransac_multi_line_detection(
     max_lines: int,
     min_inliers: int = 5,
     min_points_cnt: int = 5,
+    visualize: bool = False,
 ) -> npt.NDArray[Line]:
 
     best_lines = []
     remaining_data = data
 
-    total_inliers_count = 0
     for i in range(max_lines):
 
         best_line = ransac_line_detection(
@@ -67,33 +66,40 @@ def sequential_ransac_multi_line_detection(
         if best_line.get_inlier_count() <= min_inliers:
             break
 
-
-        # accumulate the fitted line
-        best_lines.append(best_line)
-        total_inliers_count += best_line.get_inlier_count()
-
         # perform PCA to inliers
-        pca = PCA(n_components=1)
+        mean = np.mean(best_line.inlier_points, axis=0)
+        points_centered = best_line.inlier_points - mean
+
+        pca = PCA(n_components=2)
         pca.fit(best_line.inlier_points)
 
         v = pca.components_[0]
-        point_on_line = np.mean(best_line.inlier_points, axis=0)
 
-        X = np.array(best_line.inlier_points)[:, 0]
-        Y = np.array(best_line.inlier_points)[:, 1]
+        a = v[1]
+        b = -v[0]
+        c = -a * mean[0] - b * mean[1]
 
-        Y_hat = point_on_line[1] + v[1]/v[0] * (X - point_on_line[0])
+        best_line.set_line(a, b, c)
 
-        plt.scatter(X, Y)
-        plt.plot(X, Y_hat, color='r')
+        # accumulate the fitted line
+        best_lines.append(best_line)
 
         # remove the inliers
-        inlier_points = []
-        for j, (x, y) in enumerate(remaining_data):
-            if calc_dist_to_line((x, y), best_line) < threshold:
-                inlier_points.append(j)
+        dtype = np.dtype(
+            (np.void, (remaining_data.shape[1] * remaining_data.dtype.itemsize))
+        )
+        mask = np.in1d(remaining_data.view(dtype), best_line.inlier_points.view(dtype))
+        remaining_data = remaining_data[~mask]
 
-        remaining_data = np.delete(remaining_data, inlier_points, axis=0)
+        # visualization
+        if visualize:
+            X = np.array(best_line.inlier_points)[:, 0]
+            Y = np.array(best_line.inlier_points)[:, 1]
+
+            Y_hat = (-a * X - c) / b
+
+            plt.scatter(X, Y)
+            plt.plot(X, Y_hat, color="r")
 
         # second stopping condition
         if len(remaining_data) <= min_points_cnt:
@@ -109,7 +115,7 @@ def ransac_line_detection(
     max_iterations: int,
 ) -> Line:
 
-    best_num_inliers = 0
+    best_num_inliers = None
     for i in range(max_iterations):
         # randomly select a subset of data points
         sample = data[np.random.choice(data.shape[0], 2, replace=False), :]
@@ -117,57 +123,37 @@ def ransac_line_detection(
         # fit a line to the subset of data points
         x1, y1 = sample[0]
         x2, y2 = sample[1]
-        if (
-            x2 - x1 == 0
-        ):  # if the two sampled points have the same x-coordinate, skip this iteration
-            continue
-        slope = (y2 - y1) / (x2 - x1)
-        intercept = y1 - slope * x1
 
-        fitted_line = Line(slope, intercept)
+        a = y1 - y2
+        b = x2 - x1
+        c = x1 * y2 - x2 * y1
+
+        distances = np.abs(a * data[:, 0] + b * data[:, 1] + c) / np.sqrt(
+            a**2 + b**2
+        )
 
         # count the number of inliers (data points that are within the threshold distance of the line)
-        curr_num_inliers = 0
-        inliers = []
-        for idx, (x, y) in enumerate(data):
-            if calc_dist_to_line((x, y), fitted_line) < threshold:
-                inliers.append((x, y))
-                curr_num_inliers += 1
+        curr_num_inliers = (distances < threshold).sum()
 
-        # update the best line model if this model has more inliers
-        if curr_num_inliers > best_num_inliers:
-            best_line_model = Line(slope, intercept, inliers)
+        # If this line has more inliers than any previous line, update the best fit
+        if best_num_inliers is None or curr_num_inliers > best_num_inliers:
+            inlier_distances = np.abs(a * data[:, 0] + b * data[:, 1] + c) / np.sqrt(
+                a**2 + b**2
+            )
+            inliers = data[inlier_distances < threshold]
+
             best_num_inliers = curr_num_inliers
+            best_line_model = Line(a, b, c, inliers)
 
     return best_line_model
 
 
-def fit_line(points: list):
-    n = len(points)
+def calc_dist_to_line_implicit(line, point):
 
-    # Calculate the mean of x and y
-    x_mean = sum([point[0] for point in points]) / n
-    y_mean = sum([point[1] for point in points]) / n
+    a, b, c = line
+    x0, y0 = point
 
-    # Calculate the slope and y-intercept of the linelower
-    numerator = sum(
-        [(points[i][0] - x_mean) * (points[i][1] - y_mean) for i in range(n)]
-    )
-    denominator = sum([(points[i][0] - x_mean) ** 2 for i in range(n)])
-    m = numerator / denominator
-    c = y_mean - m * x_mean
-
-    # Return the slope and y-intercept
-    return m, c
-
-
-def calc_dist_to_line(point: Tuple[float, float], line: Line):
-    # Unpack the point coordinates
-    x, y = point
-
-    # Calculate the distance from the point to the line
-    distance = abs(line.m * x - y + line.c) / math.sqrt(line.m**2 + 1)
-
+    distance = abs(a * x0 + b * y0 + c) / np.sqrt(a**2 + b**2)
     return distance
 
 
@@ -211,19 +197,20 @@ def load_points_file(filename):
     return points
 
 
-def calc_acute_angle(line1: Line, line2: Line):
+def find_intersection(line1, line2):
+    # Compute the determinant of the system of equations
+    det = line1.a * line2.b - line2.a * line1.b
 
-    theta = abs(math.atan(line2.m) - math.atan(line1.m))
-    theta_degrees = math.degrees(theta)
-    return theta_degrees if theta_degrees <= 90 else 180 - theta_degrees
+    # Check if the lines are parallel
+    if np.abs(det) < 1e-6:
+        return None
 
+    # Compute the x- and y-coordinates of the intersection point
+    x_int = (line1.b * line2.c - line2.b * line1.c) / det
+    y_int = (line2.a * line1.c - line1.a * line2.c) / det
 
-def find_intersection(line1: Line, line2: Line):
-    # Calculate the intersection point
-    x = (line2.c - line1.c) / (line1.m - line2.m)
-    y = line1.m * x + line1.c
-
-    return x, y
+    # Return the intersection point as a tuple
+    return (x_int, y_int)
 
 
 def find_connected_line_pair(detected_lines: npt.NDArray[Line]) -> Tuple[Line, Line]:
@@ -248,9 +235,11 @@ def find_connected_line_pair(detected_lines: npt.NDArray[Line]) -> Tuple[Line, L
                 if calc_dist_to_point(inlier_point, center) < radius:
                     inside_circle_cnt += 1
 
+            print(inside_circle_cnt, " ", angle_between_lines(line1, line2))
+
             if (
                 inside_circle_cnt > best_inside_circle_cnt
-                and calc_acute_angle(line1, line2) > 85
+                and angle_between_lines(line1, line2) > 85
             ):
                 best_intersection = (detected_lines[i], detected_lines[j])
                 best_inside_circle_cnt = inside_circle_cnt
@@ -277,7 +266,8 @@ def visualize_lines(
     # draw the lines
     for line in best_intersection:
         x = np.array([-5000, 5000])
-        y = line.m * x + line.c
+        # y = line.m * x + line.c
+        y = (-line.a * x - line.c) / line.b
         ax.plot(x, y)
 
 
@@ -309,12 +299,62 @@ def roundup(x):
     return int(x) if x % 100 == 0 else int(x + 100 - x % 100)
 
 
+def geometric_median(points):
+    def distance_to_candidate(candidate):
+        return np.sum(np.sqrt(np.sum((points - candidate) ** 2, axis=1)))
+
+    candidate = np.mean(points, axis=0)
+    result = minimize(distance_to_candidate, candidate, method="L-BFGS-B")
+
+    return result.x
+
+
+def angle_between_lines(line1, line2):
+
+    L1 = [line1.a, line1.b, line1.c]
+    L2 = [line2.a, line2.b, line2.c]
+
+    # Extract the direction vectors of the two lines
+    vec1 = L1[:2]
+    vec2 = L2[:2]
+
+    # calculate the dot product of the two vectors
+    dot_product = np.dot(vec1, vec2)
+
+    # calculate the magnitudes of the vectors
+    mag_vec1 = np.linalg.norm(vec1)
+    mag_vec2 = np.linalg.norm(vec2)
+
+    # calculate the cosine of the angle between the vectors
+    cos_angle = dot_product / (mag_vec1 * mag_vec2)
+
+    # use arccosine to find the angle in radians
+    angle_rad = np.arccos(cos_angle)
+
+    # convert the angle to degrees
+    angle_deg = math.degrees(
+        angle_rad
+        if angle_rad >= 0 and angle_rad <= math.pi / 2
+        else math.pi - angle_rad
+    )
+
+    return angle_deg
+
+
+def calc_dist_point(v, p):
+
+    c = np.cross(v, p)
+    d_norm = np.linalg.norm(c) / np.linalg.norm(v[:2])
+
+    return d_norm
+
+
 def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", default="1h.txt")
     parser.add_argument("--lidar", default="horizontal")
-    parser.add_argument("--threshold", default=5, type=float)
+    parser.add_argument("--threshold", default=3, type=float)
     parser.add_argument("--iter", default=1000, type=int)
     args = parser.parse_args()
 
@@ -358,18 +398,33 @@ def main():
         min_points=2,
         max_iterations=args.iter,
         max_lines=3,
+        visualize=True,
     )
+
+    # calibration lines -- currently hardcoded
+    line_length_v = np.array([-0.014690683505631297, -1, 851.0013380923344])
+    line_height_v = np.array([-122.27586116654699, -1, -177200.81615601576])
+
+    line_width_h = np.array([-0.7943318775833802, -1, -1376.7115927302407])
+    line_length_h = np.array([1.2544775069654395, -1, 1624.3095162634374])
 
     # find the line pair denoting the two edges of the box
     best_line_pair = find_connected_line_pair(detected_lines)
 
-    for line in best_line_pair:
-        print(line.get_line_implicit())
+    # finding median point
+    for line in detected_lines:
+        median_point = geometric_median(line.inlier_points)
+        plt.scatter(median_point[0], median_point[1])
+
+    # finding height line
+    # print(angle_between_lines(line_width_h, line_length_h))
+    # print("dist", calc_dist_to_line_implicit(line_length_v, median_point))
 
     # visualization
     # visualize_lines(cartesian_points, detected_lines)
     visualize_lines(cartesian_points, best_line_pair)
-    visualize_points_polar(points_filtered, args.lidar, SCAN_RANGE)
+    # visualize_points_polar(points_filtered, args.lidar, SCAN_RANGE)
+
     plt.show(block=True)
 
 
