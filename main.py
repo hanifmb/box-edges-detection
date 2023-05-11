@@ -150,7 +150,9 @@ def ransac_line_detection(
 
 def calc_dist_to_line_implicit(line, point):
 
-    a, b, c = line
+    a = line.a
+    b = line.b
+    c = line.c
     x0, y0 = point
 
     distance = abs(a * x0 + b * y0 + c) / np.sqrt(a**2 + b**2)
@@ -198,18 +200,16 @@ def load_points_file(filename):
 
 
 def find_intersection(line1, line2):
-    # Compute the determinant of the system of equations
+
     det = line1.a * line2.b - line2.a * line1.b
 
     # Check if the lines are parallel
     if np.abs(det) < 1e-6:
         return None
 
-    # Compute the x- and y-coordinates of the intersection point
     x_int = (line1.b * line2.c - line2.b * line1.c) / det
     y_int = (line2.a * line1.c - line1.a * line2.c) / det
 
-    # Return the intersection point as a tuple
     return (x_int, y_int)
 
 
@@ -314,14 +314,11 @@ def angle_between_lines(line1, line2):
     L1 = [line1.a, line1.b, line1.c]
     L2 = [line2.a, line2.b, line2.c]
 
-    # Extract the direction vectors of the two lines
     vec1 = L1[:2]
     vec2 = L2[:2]
 
-    # calculate the dot product of the two vectors
     dot_product = np.dot(vec1, vec2)
 
-    # calculate the magnitudes of the vectors
     mag_vec1 = np.linalg.norm(vec1)
     mag_vec2 = np.linalg.norm(vec2)
 
@@ -349,6 +346,59 @@ def calc_dist_point(v, p):
     return d_norm
 
 
+def calc_box_size(line_pair_h, line_pair_v):
+
+    # calibration lines -- currently hardcoded
+    line_length_v = Line(-0.014690683505631297, -1, 851.0013380923344)
+    line_height_v = Line(-122.27586116654699, -1, -177200.81615601576)
+
+    line_width_h = Line(-0.7943318775833802, -1, -1376.7115927302407)
+    line_length_h = Line(1.2544775069654395, -1, 1624.3095162634374)
+
+    line1 = line_pair_h[0]
+    line2 = line_pair_h[1]
+
+    median_point1 = geometric_median(line1.inlier_points)
+    median_point2 = geometric_median(line2.inlier_points)
+
+    if angle_between_lines(line1, line_width_h) < angle_between_lines(line1, line_length_h):
+
+        width = calc_dist_to_line_implicit(line_width_h, median_point1)
+        length = calc_dist_to_line_implicit(line_length_h, median_point2)
+
+        print("angle")
+        print(angle_between_lines(line1, line_width_h))
+        print(angle_between_lines(line2, line_length_h))
+
+    else:
+
+        width = calc_dist_to_line_implicit(line_width_h, median_point2)
+        length = calc_dist_to_line_implicit(line_length_h, median_point1)
+
+        print("angle")
+        print(angle_between_lines(line1, line_length_h))
+        print(angle_between_lines(line2, line_width_h))
+
+    line3 = line_pair_v[0]
+    line4 = line_pair_v[1]
+
+    median_point3 = geometric_median(line3.inlier_points)
+    median_point4 = geometric_median(line4.inlier_points)
+
+    if angle_between_lines(line3, line_length_v) < angle_between_lines(line4, line_length_v):
+        height = calc_dist_to_line_implicit(line_length_v, median_point3)
+
+        print("angle2")
+        print(angle_between_lines(line3, line_length_v))
+    else:
+        height = calc_dist_to_line_implicit(line_length_v, median_point4)
+
+        print("angle2")
+        print(angle_between_lines(line4, line_length_v))
+
+    return width, length, height
+
+
 def main():
 
     parser = argparse.ArgumentParser()
@@ -365,35 +415,38 @@ def main():
         "DIST_H": 2000,
     }
 
-    points = np.array(load_points_file(args.file))
+    points_h = np.array(load_points_file("4h.txt"))
+    points_v = np.array(load_points_file("4v.txt"))
 
-    if args.lidar == "horizontal":
-        mask = (
-            (points[:, 0] > SCAN_RANGE["ANGLE_H"][0])
-            & (points[:, 0] < SCAN_RANGE["ANGLE_H"][1])
-            & (np.absolute(points[:, 1]) < SCAN_RANGE["DIST_H"])
-        )
-    elif args.lidar == "vertical":
-        mask = (
-            (points[:, 0] > SCAN_RANGE["ANGLE_V"][0])
-            & (points[:, 0] < SCAN_RANGE["ANGLE_V"][1])
-            & (np.absolute(points[:, 1]) < SCAN_RANGE["DIST_V"])
-        )
-    else:
-        print("lidar type is not recognized")
-        return
+    points_calib_h = np.array(load_points_file("1h.txt"))
+    points_calib_v = np.array(load_points_file("1h.txt"))
 
-    points_filtered = points[mask]
+    mask_h = (
+        (points_h[:, 0] > SCAN_RANGE["ANGLE_H"][0])
+        & (points_h[:, 0] < SCAN_RANGE["ANGLE_H"][1])
+        & (np.absolute(points_h[:, 1]) < SCAN_RANGE["DIST_H"])
+    )
+    mask_v = (
+        (points_v[:, 0] > SCAN_RANGE["ANGLE_V"][0])
+        & (points_v[:, 0] < SCAN_RANGE["ANGLE_V"][1])
+        & (np.absolute(points_v[:, 1]) < SCAN_RANGE["DIST_V"])
+    )
+
+    points_filt_h = points_h[mask_h]
+    points_filt_v = points_v[mask_v]
+
+    points_cartesian_h = polar_to_cartesian(points_filt_h)
+    points_cartesian_v = polar_to_cartesian(points_filt_v)
+
+    # plt.scatter(cartesian_points2[:, 0], cartesian_points2[:, 1])
 
     # four data points are required to fit two lines
-    if points_filtered.size < 8:
+    if points_filt_h.size < 8:
         print(f"The number of input points are too small: {points_filtered.size}")
         return
 
-    cartesian_points = polar_to_cartesian(points_filtered)
-
-    detected_lines = sequential_ransac_multi_line_detection(
-        cartesian_points,
+    detected_lines_h = sequential_ransac_multi_line_detection(
+        points_cartesian_h,
         threshold=args.threshold,
         min_points=2,
         max_iterations=args.iter,
@@ -401,20 +454,30 @@ def main():
         visualize=True,
     )
 
-    # calibration lines -- currently hardcoded
-    line_length_v = np.array([-0.014690683505631297, -1, 851.0013380923344])
-    line_height_v = np.array([-122.27586116654699, -1, -177200.81615601576])
-
-    line_width_h = np.array([-0.7943318775833802, -1, -1376.7115927302407])
-    line_length_h = np.array([1.2544775069654395, -1, 1624.3095162634374])
+    detected_lines_v = sequential_ransac_multi_line_detection(
+        points_cartesian_v,
+        threshold=args.threshold,
+        min_points=2,
+        max_iterations=args.iter,
+        max_lines=3,
+        visualize=True,
+    )
 
     # find the line pair denoting the two edges of the box
-    best_line_pair = find_connected_line_pair(detected_lines)
+    line_pair_h = find_connected_line_pair(detected_lines_h)
+    line_pair_v = find_connected_line_pair(detected_lines_v)
 
     # finding median point
-    for line in detected_lines:
+    for line in line_pair_h:
         median_point = geometric_median(line.inlier_points)
         plt.scatter(median_point[0], median_point[1])
+
+    for line in line_pair_v:
+        median_point = geometric_median(line.inlier_points)
+        plt.scatter(median_point[0], median_point[1])
+
+    l, w, h = calc_box_size(line_pair_h, line_pair_v)
+    print(f"w: {w}, l: {l}, h: {h}")
 
     # finding height line
     # print(angle_between_lines(line_width_h, line_length_h))
@@ -422,7 +485,7 @@ def main():
 
     # visualization
     # visualize_lines(cartesian_points, detected_lines)
-    visualize_lines(cartesian_points, best_line_pair)
+    # visualize_lines(cartesian_points, best_line_pair)
     # visualize_points_polar(points_filtered, args.lidar, SCAN_RANGE)
 
     plt.show(block=True)
