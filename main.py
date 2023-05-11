@@ -424,8 +424,6 @@ def main():
     points_cartesian_h = polar_to_cartesian(points_filt_h)
     points_cartesian_v = polar_to_cartesian(points_filt_v)
 
-    # plt.scatter(cartesian_points2[:, 0], cartesian_points2[:, 1])
-
     # four data points are required to fit two lines
     if points_filt_h.size < 8:
         print(f"The number of input points are too small: {points_filtered.size}")
@@ -455,19 +453,12 @@ def main():
     line_pair_h = find_connected_line_pair(detected_lines_h)
     line_pair_v = find_connected_line_pair(detected_lines_v)
 
-    # finding median point
-    # for line in line_pair_h:
-
     # for line in line_pair_v:
     #     median_point = geometric_median(line.inlier_points)
     #     plt.scatter(median_point[0], median_point[1])
 
     l, w, h = calc_box_size(line_pair_h, line_pair_v)
     print(f"w: {w/10} cm, l: {l/10} cm, h: {h/10} cm")
-
-    # finding height line
-    # print(angle_between_lines(line_width_h, line_length_h))
-    # print("dist", calc_dist_to_line_implicit(line_length_v, median_point))
 
     # visualization
     # visualize_lines(cartesian_points, detected_lines)
