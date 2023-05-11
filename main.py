@@ -48,11 +48,13 @@ def sequential_ransac_multi_line_detection(
     min_inliers: int = 5,
     min_points_cnt: int = 5,
     visualize: bool = False,
+    subwindow: int = 1
 ) -> npt.NDArray[Line]:
 
     best_lines = []
     remaining_data = data
 
+    plt.subplot(1, 2, subwindow)
     for i in range(max_lines):
 
         best_line = ransac_line_detection(
@@ -97,6 +99,9 @@ def sequential_ransac_multi_line_detection(
             Y = np.array(best_line.inlier_points)[:, 1]
 
             Y_hat = (-a * X - c) / b
+
+            median_point = geometric_median(best_line.inlier_points)
+            plt.scatter(median_point[0], median_point[1], color="b")
 
             plt.scatter(X, Y)
             plt.plot(X, Y_hat, color="r")
@@ -235,8 +240,6 @@ def find_connected_line_pair(detected_lines: npt.NDArray[Line]) -> Tuple[Line, L
                 if calc_dist_to_point(inlier_point, center) < radius:
                     inside_circle_cnt += 1
 
-            print(inside_circle_cnt, " ", angle_between_lines(line1, line2))
-
             if (
                 inside_circle_cnt > best_inside_circle_cnt
                 and angle_between_lines(line1, line2) > 85
@@ -347,6 +350,7 @@ def calc_dist_point(v, p):
 
 
 def calc_box_size(line_pair_h, line_pair_v):
+    box_thickness = 9.1 
 
     # calibration lines -- currently hardcoded
     line_length_v = Line(-0.014690683505631297, -1, 851.0013380923344)
@@ -362,22 +366,11 @@ def calc_box_size(line_pair_h, line_pair_v):
     median_point2 = geometric_median(line2.inlier_points)
 
     if angle_between_lines(line1, line_width_h) < angle_between_lines(line1, line_length_h):
-
-        width = calc_dist_to_line_implicit(line_width_h, median_point1)
-        length = calc_dist_to_line_implicit(line_length_h, median_point2)
-
-        print("angle")
-        print(angle_between_lines(line1, line_width_h))
-        print(angle_between_lines(line2, line_length_h))
-
+        width = calc_dist_to_line_implicit(line_width_h, median_point1) + box_thickness
+        length = calc_dist_to_line_implicit(line_length_h, median_point2) + box_thickness
     else:
-
-        width = calc_dist_to_line_implicit(line_width_h, median_point2)
-        length = calc_dist_to_line_implicit(line_length_h, median_point1)
-
-        print("angle")
-        print(angle_between_lines(line1, line_length_h))
-        print(angle_between_lines(line2, line_width_h))
+        width = calc_dist_to_line_implicit(line_width_h, median_point2) + box_thickness
+        length = calc_dist_to_line_implicit(line_length_h, median_point1) + box_thickness
 
     line3 = line_pair_v[0]
     line4 = line_pair_v[1]
@@ -386,24 +379,17 @@ def calc_box_size(line_pair_h, line_pair_v):
     median_point4 = geometric_median(line4.inlier_points)
 
     if angle_between_lines(line3, line_length_v) < angle_between_lines(line4, line_length_v):
-        height = calc_dist_to_line_implicit(line_length_v, median_point3)
-
-        print("angle2")
-        print(angle_between_lines(line3, line_length_v))
+        height = calc_dist_to_line_implicit(line_length_v, median_point3) + box_thickness
     else:
-        height = calc_dist_to_line_implicit(line_length_v, median_point4)
-
-        print("angle2")
-        print(angle_between_lines(line4, line_length_v))
-
+        height = calc_dist_to_line_implicit(line_length_v, median_point4) + box_thickness
     return width, length, height
 
 
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file", default="1h.txt")
-    parser.add_argument("--lidar", default="horizontal")
+    parser.add_argument("--hfile", default="2h.txt")
+    parser.add_argument("--vfile", default="2v.txt")
     parser.add_argument("--threshold", default=3, type=float)
     parser.add_argument("--iter", default=1000, type=int)
     args = parser.parse_args()
@@ -415,11 +401,11 @@ def main():
         "DIST_H": 2000,
     }
 
-    points_h = np.array(load_points_file("4h.txt"))
-    points_v = np.array(load_points_file("4v.txt"))
+    points_h = np.array(load_points_file(args.hfile))
+    points_v = np.array(load_points_file(args.vfile))
 
-    points_calib_h = np.array(load_points_file("1h.txt"))
-    points_calib_v = np.array(load_points_file("1h.txt"))
+    # points_calib_h = np.array(load_points_file("1h.txt"))
+    # points_calib_v = np.array(load_points_file("1h.txt"))
 
     mask_h = (
         (points_h[:, 0] > SCAN_RANGE["ANGLE_H"][0])
@@ -452,6 +438,7 @@ def main():
         max_iterations=args.iter,
         max_lines=3,
         visualize=True,
+        subwindow=1
     )
 
     detected_lines_v = sequential_ransac_multi_line_detection(
@@ -461,6 +448,7 @@ def main():
         max_iterations=args.iter,
         max_lines=3,
         visualize=True,
+        subwindow=2
     )
 
     # find the line pair denoting the two edges of the box
@@ -468,16 +456,14 @@ def main():
     line_pair_v = find_connected_line_pair(detected_lines_v)
 
     # finding median point
-    for line in line_pair_h:
-        median_point = geometric_median(line.inlier_points)
-        plt.scatter(median_point[0], median_point[1])
+    # for line in line_pair_h:
 
-    for line in line_pair_v:
-        median_point = geometric_median(line.inlier_points)
-        plt.scatter(median_point[0], median_point[1])
+    # for line in line_pair_v:
+    #     median_point = geometric_median(line.inlier_points)
+    #     plt.scatter(median_point[0], median_point[1])
 
     l, w, h = calc_box_size(line_pair_h, line_pair_v)
-    print(f"w: {w}, l: {l}, h: {h}")
+    print(f"w: {w/10} cm, l: {l/10} cm, h: {h/10} cm")
 
     # finding height line
     # print(angle_between_lines(line_width_h, line_length_h))

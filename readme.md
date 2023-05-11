@@ -1,12 +1,7 @@
 # Box edges detection
 
 ## Usage
-Example of finding line pair for 4h.txt point cloud with the horizontal lidar configuration:
+supply the horizontal and vertical lidar data files in the argument
 ```bash
-python main.py --file 4h.txt --lidar horizontal
-```
-
-More parameters:
-```bash
-python main.py --file 4v.txt --lidar vertical --threshold 5 --iter 1000
+python main.py --hfile 3h.txt --vfile 3v.txt
 ```
