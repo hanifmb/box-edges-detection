@@ -48,7 +48,7 @@ def sequential_ransac_multi_line_detection(
     min_inliers: int = 5,
     min_points_cnt: int = 5,
     visualize: bool = False,
-    subwindow: int = 1
+    subwindow: int = 1,
 ) -> npt.NDArray[Line]:
 
     best_lines = []
@@ -350,7 +350,7 @@ def calc_dist_point(v, p):
 
 
 def calc_box_size(line_pair_h, line_pair_v):
-    box_thickness = 9.1 
+    box_thickness = 9.1
 
     # calibration lines -- currently hardcoded
     line_length_v = Line(-0.014690683505631297, -1, 851.0013380923344)
@@ -365,12 +365,18 @@ def calc_box_size(line_pair_h, line_pair_v):
     median_point1 = geometric_median(line1.inlier_points)
     median_point2 = geometric_median(line2.inlier_points)
 
-    if angle_between_lines(line1, line_width_h) < angle_between_lines(line1, line_length_h):
+    if angle_between_lines(line1, line_width_h) < angle_between_lines(
+        line1, line_length_h
+    ):
         width = calc_dist_to_line_implicit(line_width_h, median_point1) + box_thickness
-        length = calc_dist_to_line_implicit(line_length_h, median_point2) + box_thickness
+        length = (
+            calc_dist_to_line_implicit(line_length_h, median_point2) + box_thickness
+        )
     else:
         width = calc_dist_to_line_implicit(line_width_h, median_point2) + box_thickness
-        length = calc_dist_to_line_implicit(line_length_h, median_point1) + box_thickness
+        length = (
+            calc_dist_to_line_implicit(line_length_h, median_point1) + box_thickness
+        )
 
     line3 = line_pair_v[0]
     line4 = line_pair_v[1]
@@ -378,10 +384,16 @@ def calc_box_size(line_pair_h, line_pair_v):
     median_point3 = geometric_median(line3.inlier_points)
     median_point4 = geometric_median(line4.inlier_points)
 
-    if angle_between_lines(line3, line_length_v) < angle_between_lines(line4, line_length_v):
-        height = calc_dist_to_line_implicit(line_length_v, median_point3) + box_thickness
+    if angle_between_lines(line3, line_length_v) < angle_between_lines(
+        line4, line_length_v
+    ):
+        height = (
+            calc_dist_to_line_implicit(line_length_v, median_point3) + box_thickness
+        )
     else:
-        height = calc_dist_to_line_implicit(line_length_v, median_point4) + box_thickness
+        height = (
+            calc_dist_to_line_implicit(line_length_v, median_point4) + box_thickness
+        )
     return width, length, height
 
 
@@ -436,7 +448,7 @@ def main():
         max_iterations=args.iter,
         max_lines=3,
         visualize=True,
-        subwindow=1
+        subwindow=1,
     )
 
     detected_lines_v = sequential_ransac_multi_line_detection(
@@ -446,7 +458,7 @@ def main():
         max_iterations=args.iter,
         max_lines=3,
         visualize=True,
-        subwindow=2
+        subwindow=2,
     )
 
     # find the line pair denoting the two edges of the box
