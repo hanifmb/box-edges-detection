@@ -8,9 +8,7 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from scipy.optimize import minimize
 
-from matplotlib.patches import Circle
 from typing import Tuple
-from pylr2 import regress2
 
 
 class Line:
